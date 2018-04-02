@@ -7,8 +7,7 @@ from torch.autograd import Variable
 
 
 def get_names_dict(model):
-    """
-    Recursive walk to get names including path
+    """Recursive walk to get names of modules including path for a pytorch model.
     """
     names = {}
     def _get_names(module, parent_name=''):
@@ -22,18 +21,25 @@ def get_names_dict(model):
 
 
 def summarize_model(model, input_size, return_meta=False):
-    """
-    Summarizes torch model by showing trainable parameters and weights.
+    """Summarizes torch model by showing trainable parameters and weights.
+
+    Parameters:
+    ----------
+    model : {nn.Module}
+        The model to summarize.
+    input_size : {tuple}
+        The dimensions of the model input not including batch size.
+    return_meta : {bool}, optional
+        Whether or not to return some additional meta data of the 
+        model compute from the summary (the default is False).
     
-    author: wassname
-    url: https://gist.github.com/wassname/0fb8f95e4272e6bdd27bd7df386716b7
-    license: MIT
+    Returns
+    -------
+    pd.DataFrame
+        The model summary as a Pandas data frame.
     
-    Modified from:
-    - https://github.com/pytorch/pytorch/issues/2001#issuecomment-313735757
-    - https://gist.github.com/wassname/0fb8f95e4272e6bdd27bd7df386716b7/
-    
-    Usage:
+    ---------
+    Example:
         import torchvision.models as models
         model = models.alexnet()
         df = summarize_model(model=model, input_size=(3, 224, 224))
