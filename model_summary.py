@@ -1,5 +1,6 @@
 from collections import OrderedDict
 
+import IPython
 import pandas as pd
 import torch
 from torch import nn
@@ -7,9 +8,11 @@ from torch.autograd import Variable
 
 
 def get_names_dict(model):
-    """Recursive walk to get names of modules including path for a pytorch model.
+    """
+    Recursive walk over modules to get names including path.
     """
     names = {}
+
     def _get_names(module, parent_name=''):
         for key, module in module.named_children():
             name = parent_name + '.' + key if parent_name else key
@@ -32,24 +35,64 @@ def summarize_model(model, input_size, return_meta=False):
     return_meta : {bool}, optional
         Whether or not to return some additional meta data of the 
         model compute from the summary (the default is False).
-    
+
     Returns
     -------
     pd.DataFrame
         The model summary as a Pandas data frame.
-    
+
     ---------
     Example:
         import torchvision.models as models
         model = models.alexnet()
         df = summarize_model(model=model, input_size=(3, 224, 224))
         print(df)
-        
+
                      name class_name        input_shape       output_shape  n_parameters
         1     features=>0     Conv2d  (-1, 3, 224, 224)   (-1, 64, 55, 55)      23296
         2     features=>1       ReLU   (-1, 64, 55, 55)   (-1, 64, 55, 55)          0
         ...
     """
+    def get_settings(m):
+        c = m.__class__
+        s = {}
+        # Linear layers
+        if c is [nn.Linear, nn.Bilinear]:
+            s = '-'
+        # Convolutional layers
+        if c in [nn.Conv1d, nn.Conv2d, nn.Conv3d]:
+            s = {'stride': m.stride, 'padding': m.padding}
+        if c in [nn.ConvTranspose1d, nn.ConvTranspose2d, nn.ConvTranspose3d]:
+            s = {'stride': m.stride, 'padding': m.padding, 'output_padding': m.output_padding}
+        # Pooling layers
+        if c in [nn.MaxPool1d, nn.MaxPool2d, nn.MaxPool3d]:
+            s = {'kernel_size': m.kernel_size, 'stride': m.stride, 'padding': m.padding, 'dilation': m.dilation} #, 'ceil_mode'=False}
+        if c in [nn.MaxUnpool1d, nn.MaxUnpool2d, nn.MaxUnpool3d]:
+            s = {'kernel_size': m.kernel_size, 'stride': m.stride, 'padding': m.padding}
+        if c in [nn.AvgPool1d, nn.AvgPool2d, nn.AvgPool3d]:
+            s = {'kernel_size': m.kernel_size, 'stride': m.stride, 'padding': m.padding, 'count_include_pad': m.count_include_pad}
+        # Padding layers
+        if c in [nn.ReflectionPad1d, nn.ReflectionPad2d, nn.ReplicationPad1d, nn.ReplicationPad2d, nn.ReplicationPad3d, 
+                 nn.ZeroPad2d, nn.ConstantPad1d, nn.ConstantPad2d, nn.ConstantPad3d]:
+            s = {'padding': m.padding}
+            if c in [nn.ConstantPad1d, nn.ConstantPad2d, nn.ConstantPad3d]:
+                s['value'] = m.value
+        # Recurrent layers
+        if c in [nn.RNN, nn.LSTM, nn.GRU, nn.RNNCell, nn.LSTMCell, nn.GRUCell]:
+            s = {'input_size': m.input_size, 'hidden_size': m.hidden_size,
+                 'num_layers': m.num_layers, 'nonlinearity': m.nonlinearity,
+                 'dropout': m.dropout, 'bidirectional': m.bidirectional,
+                 'batch_first': m.batch_first}
+        # Dropout layers
+        if c in [nn.Dropout, nn.Dropout2d, nn.Dropout3d]:
+            s = {'p': m.p}
+        # Normalization layers
+        if c in [nn.BatchNorm1d, nn.BatchNorm2d, nn.BatchNorm3d]:
+            s = {'momentum': m.momentum, 'affine': m.affine}
+        # Activation functions
+        # Embedding layers
+        s = s if len(s) > 0 else '-'
+        return s
 
     def register_hook(module):
         # Define hook
@@ -74,13 +117,17 @@ def summarize_model(model, input_size, return_meta=False):
             # Number of parameters in layers
             summary[m_key]['n_parameters'] = sum([torch.LongTensor(list(p.size())).prod() for p in module.parameters()])            
             summary[m_key]['n_trainable'] = sum([torch.LongTensor(list(p.size())).prod() for p in module.parameters() if p.requires_grad])
+            # Get special settings for layers
+            summary[m_key]['settings'] = get_settings(module)
 
-        # Append 
+        # Append
         if not isinstance(module, nn.Sequential) and not isinstance(module, nn.ModuleList) and not (module == model):
             hooks.append(module.register_forward_hook(hook))
 
-    # Put model in evaluation mode (required for e.g. batchnorm layers)
-    model.eval()
+    # Put model in evaluation mode (required for some modules {BN, DO, etc.})
+    was_training = model.training
+    if model.training:
+        model.eval()
     # Names are stored in parent and path+name is unique not the name
     names = get_names_dict(model)
     # Check if there are multiple inputs to the network
@@ -103,6 +150,9 @@ def summarize_model(model, input_size, return_meta=False):
     # return it in the state it was given.
     for h in hooks:
         h.remove()
+    # If the model was in training mode, put it back into training mode
+    if was_training:
+        model.train()
     # Make dataframe
     df_summary = pd.DataFrame.from_dict(summary, orient='index')
     # Create additional info
@@ -115,3 +165,15 @@ def summarize_model(model, input_size, return_meta=False):
         return df_summary, df_meta
     else:
         return df_summary
+
+
+if __name__ == '__main__':
+    import torchvision.models as models
+    pd.set_option('display.max_colwidth', -1)
+    # AlexNet, ResNet-152 and VGG19 with BN
+    models = [models.alexnet(), models.resnet152(), models.vgg19_bn()]
+    for model in models:
+        df, meta = summarize_model(model=model, input_size=(3, 224, 224), return_meta=True)
+        print(df.to_string())
+        print(meta)
+        print('\n##################################################################\n')
