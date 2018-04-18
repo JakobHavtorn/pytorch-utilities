@@ -1,6 +1,10 @@
 import torch
 import torch.nn as nn
+import torch.optim as optim
+import torch.utils.data as data
 from torch.autograd import Variable
+
+from torchvision import datasets, transforms
 
 
 class GaussianDropout(nn.Module):
@@ -72,6 +76,41 @@ class VariationalDropout(nn.Module):
             return x
 
 
+def build_dataset(dataset='MNIST', dataset_dir='./data', batch_size=100):
+    dataset_ = {
+        'MNIST': datasets.MNIST,
+        'CIFAR10': datasets.CIFAR10
+    }[dataset]
+    
+    transform = {
+        'MNIST': transforms.ToTensor(),
+        'CIFAR10': transforms.Compose([
+            transforms.ToTensor(),
+            transforms.Normalize((0.5, 0.5, 0.5), (0.5, 0.5, 0.5))
+            ])
+    }[dataset]
+    
+    train_dataset = dataset_(root=dataset_dir,
+                             train=True,
+                             transform=transform,
+                             download=True)
+
+    train_loader = data.DataLoader(dataset=train_dataset,
+                                  batch_size=batch_size,
+                                  shuffle=True)
+
+    test_dataset = dataset_(root=dataset_dir,
+                             train=False,
+                             transform=transform,
+                             download=True)
+
+    test_loader = data.DataLoader(dataset=test_dataset,
+                                  batch_size=batch_size,
+                                  shuffle=False)
+    
+    return train_loader, test_loader
+
+
 class Solver(object):
     def __init__(self, Network=CNN, dropout_method='standard', dataset='MNIST', lr=0.005):        
         self.train_loader, self.test_loader = build_dataset(dataset, './data')
@@ -88,7 +127,6 @@ class Solver(object):
 
     def train(self, n_epochs=50):
         self.net.train()
-        
         for epoch_i in range(n_epochs):
             epoch_i += 1
             epoch_loss = 0
@@ -96,23 +134,16 @@ class Solver(object):
             for images, labels in self.train_loader:
                 images = Variable(images).view(-1, self.image_dim).cuda()
                 labels = Variable(labels).cuda()
-
                 logits = self.net(images)
-                
-                
                 loss = self.loss_fn(logits, labels)
-                
                 if self.dropout_method == 'variational':
                     kl = self.net.kl()
                     total_loss = loss + kl / 10
                 else:
                     total_loss = loss
-
                 self.optimizer.zero_grad()
                 total_loss.backward()
-
                 self.optimizer.step()
-                
                 epoch_loss += float(loss.data)
                 if self.dropout_method == 'variational':
                     epoch_kl += float(kl.data)
@@ -131,28 +162,26 @@ class Solver(object):
         self.net.eval()
         for images, labels in self.test_loader:
             images = Variable(images).view(-1, self.image_dim).cuda()
-
             logits = self.net(images)
-            
             _, predicted = torch.max(logits.data, 1)
-            
             total += labels.size(0)
             correct += (predicted.cpu() == labels).sum()
-                
         print('Accuracy: {acc:.2f}%'.format(acc=100 * correct / total))
 
 
 class CNN(nn.Module):
     def __init__(self, image_dim=(28, 28), dropout_method='standard'):
+        """3-Layer Fully-connected NN
+        """
         super(CNN, self).__init__()
-        """3-Layer Fully-connected NN"""
+
         def dropout(p=None, dim=None, method='standard'):
-        if method == 'standard':
-            return nn.Dropout(p)
-        elif method == 'gaussian':
-            return GaussianDropout(p/(1-p))
-        elif method == 'variational':
-            return VariationalDropout(p/(1-p), dim)
+            if method == 'standard':
+                return nn.Dropout(p)
+            elif method == 'gaussian':
+                return GaussianDropout(p/(1-p))
+            elif method == 'variational':
+                return VariationalDropout(p/(1-p), dim)
         
         self.net = nn.Sequential(
             nn.Conv2d(1, 10, kernel_size=(5, 5), stride=(1, 1), padding=(0, 0)),
@@ -177,7 +206,6 @@ class CNN(nn.Module):
             if isinstance(module, VariationalDropout):
                 kl += module.kl().sum()
         return kl
-        
             
     def forward(self, x):
         return self.net(x)
