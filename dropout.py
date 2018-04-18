@@ -132,7 +132,7 @@ class Solver(object):
             epoch_loss = 0
             epoch_kl = 0
             for images, labels in self.train_loader:
-                images = Variable(images).view(-1, self.image_dim).cuda()
+                images = Variable(images).cuda()
                 labels = Variable(labels).cuda()
                 logits = self.net(images)
                 loss = self.loss_fn(logits, labels)
@@ -161,7 +161,7 @@ class Solver(object):
         correct = 0
         self.net.eval()
         for images, labels in self.test_loader:
-            images = Variable(images).view(-1, self.image_dim).cuda()
+            images = Variable(images).cuda()
             logits = self.net(images)
             _, predicted = torch.max(logits.data, 1)
             total += labels.size(0)
@@ -197,7 +197,7 @@ class CNN(nn.Module):
             dropout(0.5, 100, dropout_method),
             nn.ReLU(),
             nn.Linear(100, 10),
-            nn.SoftMax()
+            nn.Softmax()
         )
         
     def kl(self):
