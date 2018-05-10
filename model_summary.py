@@ -90,6 +90,10 @@ def summarize_model(model, input_size, return_meta=False):
         if c in [nn.BatchNorm1d, nn.BatchNorm2d, nn.BatchNorm3d]:
             s = {'momentum': m.momentum, 'affine': m.affine}
         # Activation functions
+        if c in [nn.ELU]:
+            s = {'alpha': c.alpha}
+        if c in [nn.Softplus]:
+            s = {'beta': c.beta, 'threshold': c.threshold}
         # Embedding layers
         s = s if len(s) > 0 else '-'
         return s
