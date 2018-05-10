@@ -50,6 +50,22 @@ class AbstractModel(nn.Module):
         return m.summary[m.summary[k] > 0].shape[0]
 
     def initialize_weights(self):
+        def init_gru(cell, gain=1):
+            # Orthogonal initialization of recurrent weights
+            cell.reset_parameters()
+            for _, hh, _, _ in cell.all_weights:
+                for i in range(0, hh.size(0), cell.hidden_size):
+                    I.orthogonal(hh[i:i + cell.hidden_size], gain=gain)
+        
+        def init_lstm(cell, gain=1):
+            # Orthogonal initialization of recurrent weights and 
+            # positive forget gate bias (Jozefowicz et al., 2015)
+            init_gru(cell, gain)
+            for _, _, ih_b, hh_b in cell.all_weights:
+                l = len(ih_b)
+                ih_b[l // 4:l // 2].data.fill_(1.0)
+                hh_b[l // 4:l // 2].data.fill_(1.0)
+    
         # Loop in reverse to pick up the nonlinearity following the layer for gain computation
         modules = list(self.modules())
         for m in reversed(modules):
@@ -62,6 +78,10 @@ class AbstractModel(nn.Module):
                 nn.init.xavier_normal(m.weight.data, gain=gain)
                 if m.bias is not None:
                     m.bias.data.zero_()
+            elif isinstance(m, nn.LSTM):
+                init_lstm(m, gain=gain)
+            elif isinstance(m, nn.GRU):
+                init_gru(m, gain=gain)
             elif isinstance(m, nn.Linear):
                 assert gain == calculate_xavier_gain(nn.Linear)
                 nn.init.xavier_normal(m.weight.data, gain=gain)
@@ -74,3 +94,5 @@ class AbstractModel(nn.Module):
                 # Running stats are initialized to have no history
                 m.running_mean.zero_()
                 m.running_var.fill_(1)
+
+    
