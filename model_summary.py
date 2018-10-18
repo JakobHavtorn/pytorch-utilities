@@ -1,6 +1,5 @@
 from collections import OrderedDict
 
-import IPython
 import pandas as pd
 import torch
 from torch import nn
@@ -119,8 +118,8 @@ def summarize_model(model, input_size, return_meta=False):
             # Weight dimensions
             summary[m_key]['weight_shapes'] = list([tuple(p.size()) for p in module.parameters()])
             # Number of parameters in layers
-            summary[m_key]['n_parameters'] = sum([torch.LongTensor(list(p.size())).prod() for p in module.parameters()])            
-            summary[m_key]['n_trainable'] = sum([torch.LongTensor(list(p.size())).prod() for p in module.parameters() if p.requires_grad])
+            summary[m_key]['n_parameters'] = sum([torch.LongTensor(list(p.size())).prod().item() for p in module.parameters()])            
+            summary[m_key]['n_trainable'] = sum([torch.LongTensor(list(p.size())).prod().item() for p in module.parameters() if p.requires_grad])
             # Get special settings for layers
             summary[m_key]['settings'] = get_settings(module)
 
